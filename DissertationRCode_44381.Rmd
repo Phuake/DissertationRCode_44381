@@ -1,0 +1,1408 @@
+---
+title: "Dissertation Draft New_1"
+author: '44831'
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+
+# Load Required Libraries
+# =======================
+library(tidyverse)
+library(readr)
+library(purrr)
+library(dplyr)
+library(stringr)
+library(broom)
+
+# Set file paths
+base_path <- "C:/Users/LuChunyi/Desktop/Study/LSE/Dissertation/Data"
+crime_folder <- "CrimeData_WestMidlands"
+data_path <- paste0(base_path, "/", crime_folder)
+output_path <- base_path
+
+```
+
+```{r}
+
+# 1. Crime Data Import and Consolidation
+# ======================================
+
+# Generate file paths for academic year periods (May-April)
+generate_file_paths_by_period <- function() {
+  periods <- list(
+    period1 = list(name = "2021-05_to_2022-04", start_year = 2021, start_month = 5, end_year = 2022, end_month = 4),
+    period2 = list(name = "2022-05_to_2023-04", start_year = 2022, start_month = 5, end_year = 2023, end_month = 4),
+    period3 = list(name = "2023-05_to_2024-04", start_year = 2023, start_month = 5, end_year = 2024, end_month = 4),
+    period4 = list(name = "2024-05_to_2025-04", start_year = 2024, start_month = 5, end_year = 2025, end_month = 4)
+  )
+  
+  all_periods <- list()
+  
+  for (period_key in names(periods)) {
+    period_info <- periods[[period_key]]
+    file_paths <- c()
+    
+    current_year <- period_info$start_year
+    current_month <- period_info$start_month
+    
+    while (current_year < period_info$end_year || 
+           (current_year == period_info$end_year && current_month <= period_info$end_month)) {
+      
+      # Skip 2022-04 (missing file)
+      if (!(current_year == 2022 && current_month == 4)) {
+        month_str <- sprintf("%02d", current_month)
+        filename <- paste0(current_year, "-", month_str, "-west-midlands-street.csv")
+        full_path <- file.path(data_path, filename)
+        file_paths <- c(file_paths, full_path)
+      }
+      
+      current_month <- current_month + 1
+      if (current_month > 12) {
+        current_month <- 1
+        current_year <- current_year + 1
+      }
+    }
+    
+    all_periods[[period_key]] <- list(name = period_info$name, files = file_paths)
+  }
+  
+  return(all_periods)
+}
+
+# Read individual crime files
+read_crime_file <- function(file_path) {
+  tryCatch({
+    data <- read_csv(file_path, show_col_types = FALSE)
+    filename <- basename(file_path)
+    year_month <- str_extract(filename, "\\d{4}-\\d{2}")
+    data$source_file <- year_month
+    return(data)
+  }, error = function(e) NULL)
+}
+
+# Process and combine crime data by period
+process_period_data <- function(period_info) {
+  existing_files <- period_info$files[sapply(period_info$files, file.exists)]
+  if (length(existing_files) == 0) return(NULL)
+  
+  crime_data_list <- map(existing_files, read_crime_file)
+  crime_data_list <- crime_data_list[!sapply(crime_data_list, is.null)]
+  
+  if (length(crime_data_list) > 0) {
+    return(bind_rows(crime_data_list))
+  }
+  return(NULL)
+}
+
+# Generate and save annual crime datasets
+all_periods <- generate_file_paths_by_period()
+
+for (period_key in names(all_periods)) {
+  period_info <- all_periods[[period_key]]
+  period_data <- process_period_data(period_info)
+  
+  if (!is.null(period_data)) {
+    output_filename <- paste0("west_midlands_crime_", period_info$name, ".csv")
+    full_output_path <- file.path(output_path, output_filename)
+    write_csv(period_data, full_output_path)
+  }
+}
+
+```
+
+```{r}
+
+# 2. Import and Combine Annual Crime Data
+# =======================================
+
+crime_2021_2022 <- read_csv(file.path(output_path, "west_midlands_crime_2021-05_to_2022-04.csv"))
+crime_2022_2023 <- read_csv(file.path(output_path, "west_midlands_crime_2022-05_to_2023-04.csv"))
+crime_2023_2024 <- read_csv(file.path(output_path, "west_midlands_crime_2023-05_to_2024-04.csv"))
+crime_2024_2025 <- read_csv(file.path(output_path, "west_midlands_crime_2024-05_to_2025-04.csv"))
+
+# Add period identifiers and combine
+crime_2021_2022$period <- "2021-05_to_2022-04"
+crime_2022_2023$period <- "2022-05_to_2023-04"
+crime_2023_2024$period <- "2023-05_to_2024-04"
+crime_2024_2025$period <- "2024-05_to_2025-04"
+
+crime_data_combined <- bind_rows(crime_2021_2022, crime_2022_2023, crime_2023_2024, crime_2024_2025)
+
+```
+
+```{r}
+
+# 3. Crime Classification
+# =======================
+
+classify_crime <- function(crime_type) {
+  property_crimes <- c("Bicycle theft", "Burglary", "Criminal damage and arson",
+                      "Other theft", "Shoplifting", "Theft from the person", "Vehicle crime")
+  
+  violent_crimes <- c("Violence and sexual offences", "Anti-social behaviour", 
+                     "Public order", "Robbery")
+  
+  other_crimes <- c("Drugs", "Other crime", "Possession of weapons")
+  
+  if (crime_type %in% property_crimes) return("Property Crime")
+  else if (crime_type %in% violent_crimes) return("Violent Crime")
+  else if (crime_type %in% other_crimes) return("Other Crime")
+  else return("Unclassified")
+}
+
+# Apply crime classification
+crime_data_combined <- crime_data_combined %>%
+  mutate(Crime_Category = sapply(`Crime type`, classify_crime))
+
+# Display crime category distribution
+table(crime_data_combined$Crime_Category)
+
+```
+
+```{r}
+
+# 4. Import Supporting Datasets
+# =============================
+
+migrant_indicator <- read_csv(file.path(base_path, "Migrant Indicator.csv"))
+population_data <- read_csv(file.path(base_path, "LSOA_population_estimates_mid2022.csv"))
+
+```
+
+```{r}
+
+# 5. Calculate Crime Rates by LSOA
+# ================================
+
+# Calculate crime counts and averages across periods
+crime_by_period <- crime_data_combined %>%
+  filter(!is.na(`LSOA code`)) %>%
+  group_by(`LSOA code`, period, Crime_Category) %>%
+  summarise(crime_count = n(), .groups = 'drop')
+
+crime_averages <- crime_by_period %>%
+  group_by(`LSOA code`, Crime_Category) %>%
+  summarise(yearly_avg_crimes = mean(crime_count, na.rm = TRUE), .groups = 'drop') %>%
+  pivot_wider(names_from = Crime_Category, values_from = yearly_avg_crimes, values_fill = 0) %>%
+  rename(property_crime_yearly_avg = `Property Crime`, violent_crime_yearly_avg = `Violent Crime`)
+
+# Calculate crime rates (per 10,000 people)
+crime_with_population <- crime_averages %>%
+  left_join(population_data, by = c("LSOA code" = "LSOA 2021 Code"))
+
+# Identify population column and calculate rates
+population_col <- names(population_data)[grepl("All ages|Total|Population", names(population_data), ignore.case = TRUE)]
+
+if(length(population_col) > 0) {
+  pop_col_name <- population_col[1]
+  crime_rates <- crime_with_population %>%
+    mutate(
+      population = get(pop_col_name),
+      property_crime_rate = (property_crime_yearly_avg / population) * 10000,
+      violent_crime_rate = (violent_crime_yearly_avg / population) * 10000
+    ) %>%
+    filter(!is.na(population), population > 0)
+} else {
+  crime_rates <- crime_with_population %>%
+    mutate(
+      population = `All Ages`,
+      property_crime_rate = (property_crime_yearly_avg / population) * 10000,
+      violent_crime_rate = (violent_crime_yearly_avg / population) * 10000
+    ) %>%
+    filter(!is.na(population), population > 0)
+}
+
+```
+
+```{r}
+
+# 6. Process Migration Data
+# =========================
+
+# Find migration columns automatically
+same_address_col <- names(migrant_indicator)[grepl("Address one year ago.*same.*enumeration", names(migrant_indicator), ignore.case = TRUE)]
+total_residents_col <- names(migrant_indicator)[grepl("Total.*usual residents", names(migrant_indicator), ignore.case = TRUE)]
+
+# Calculate overall migration rate
+if(length(same_address_col) > 0 && length(total_residents_col) > 0) {
+  migrant_processed <- migrant_indicator %>%
+    mutate(
+      same_address = get(same_address_col[1]),
+      total_residents = get(total_residents_col[1]),
+      migration_rate = (1 - same_address / total_residents)
+    ) %>%
+    filter(!is.na(migration_rate), migration_rate > 0)
+} else {
+  migrant_processed <- migrant_indicator %>%
+    mutate(
+      migration_rate = (1 - `Address one year ago is the same as the address of enumeration` / `Total: All usual residents`)
+    ) %>%
+    filter(!is.na(migration_rate), migration_rate > 0)
+}
+
+```
+
+```{r}
+
+# 7. Basic Migration-Crime Analysis
+# =================================
+
+# Merge crime rates and migration data
+analysis_data <- crime_rates %>%
+  inner_join(migrant_processed, by = c("LSOA code" = "mnemonic")) %>%
+  filter(!is.na(migration_rate), !is.na(property_crime_rate), !is.na(violent_crime_rate),
+         migration_rate > 0, property_crime_rate > 0, violent_crime_rate > 0) %>%
+  mutate(
+    log_migration_rate = log(migration_rate),
+    log_property_crime_rate = log(property_crime_rate),
+    log_violent_crime_rate = log(violent_crime_rate)
+  )
+
+# Basic log-log regression models
+property_log_model <- lm(log_property_crime_rate ~ log_migration_rate, data = analysis_data)
+violent_log_model <- lm(log_violent_crime_rate ~ log_migration_rate, data = analysis_data)
+
+print("=== LOG-LOG OLS REGRESSION RESULTS ===")
+print("=== Property Crime Rate Model ===")
+print("log(property_crime_rate) ~ log(migration_rate)")
+summary(property_log_model)
+
+print("=== Violent Crime Rate Model ===")
+print("log(violent_crime_rate) ~ log(migration_rate)")
+summary(violent_log_model)
+
+```
+
+```{r}
+
+# 8. Migration Category Analysis
+# ==============================
+
+# Find migration category columns
+student_col <- names(migrant_indicator)[grepl("student.*term.*time.*boarding.*school", names(migrant_indicator), ignore.case = TRUE)]
+uk_migrant_col <- names(migrant_indicator)[grepl("Migrant.*within.*UK.*Address.*one.*year.*ago.*was.*in.*the.*UK", names(migrant_indicator), ignore.case = TRUE)]
+outside_uk_col <- names(migrant_indicator)[grepl("Migrant.*outside.*UK.*Address.*one.*year.*ago.*was.*outside.*the.*UK", names(migrant_indicator), ignore.case = TRUE)]
+
+# Calculate migration category rates
+if(length(student_col) > 0 && length(uk_migrant_col) > 0 && length(outside_uk_col) > 0) {
+  migrant_categories <- migrant_indicator %>%
+    mutate(
+      student_migrants = get(student_col[1]),
+      uk_migrants = get(uk_migrant_col[1]),
+      outside_uk_migrants = get(outside_uk_col[1]),
+      total_residents = get(total_residents_col[1]),
+      student_migration_rate = student_migrants / total_residents,
+      uk_migration_rate = uk_migrants / total_residents,
+      outside_uk_migration_rate = outside_uk_migrants / total_residents
+    ) %>%
+    filter(!is.na(student_migration_rate), !is.na(uk_migration_rate), 
+           !is.na(outside_uk_migration_rate), total_residents > 0)
+} else {
+  migrant_categories <- migrant_indicator %>%
+    mutate(
+      student_migrants = `Address one year ago is student term-time or boarding school address in the UK`,
+      uk_migrants = `Migrant from within the UK: Address one year ago was in the UK`,
+      outside_uk_migrants = `Migrant from outside the UK: Address one year ago was outside the UK`,
+      total_residents = `Total: All usual residents`,
+      student_migration_rate = student_migrants / total_residents,
+      uk_migration_rate = uk_migrants / total_residents,
+      outside_uk_migration_rate = outside_uk_migrants / total_residents
+    ) %>%
+    filter(!is.na(student_migration_rate), !is.na(uk_migration_rate), 
+           !is.na(outside_uk_migration_rate), total_residents > 0)
+}
+
+# Merge crime rates with migration categories
+analysis_data_categories <- crime_rates %>%
+  inner_join(migrant_categories, by = c("LSOA code" = "mnemonic")) %>%
+  filter(!is.na(student_migration_rate), !is.na(uk_migration_rate), !is.na(outside_uk_migration_rate),
+         !is.na(property_crime_rate), !is.na(violent_crime_rate),
+         property_crime_rate > 0, violent_crime_rate > 0) %>%
+  mutate(
+    log_student_migration_rate = log(student_migration_rate + 0.001),
+    log_uk_migration_rate = log(uk_migration_rate + 0.001),
+    log_outside_uk_migration_rate = log(outside_uk_migration_rate + 0.001),
+    log_property_crime_rate = log(property_crime_rate),
+    log_violent_crime_rate = log(violent_crime_rate)
+  )
+
+# Migration category regression models
+property_categories_model <- lm(log_property_crime_rate ~ log_student_migration_rate + 
+                               log_uk_migration_rate + log_outside_uk_migration_rate, 
+                               data = analysis_data_categories)
+
+violent_categories_model <- lm(log_violent_crime_rate ~ log_student_migration_rate + 
+                              log_uk_migration_rate + log_outside_uk_migration_rate, 
+                              data = analysis_data_categories)
+
+print("=== Property Crime Rate Model with Migration Categories ===")
+print("log(property_crime_rate) ~ log(student_migration_rate) + log(uk_migration_rate) + log(outside_uk_migration_rate)")
+summary(property_categories_model)
+
+print("=== Violent Crime Rate Model with Migration Categories ===")
+print("log(violent_crime_rate) ~ log(student_migration_rate) + log(uk_migration_rate) + log(outside_uk_migration_rate)")
+summary(violent_categories_model)
+
+```
+
+```{r}
+
+# 9. Add Population Density Control
+# =================================
+
+population_density <- read_csv(file.path(base_path, "Population density.csv"))
+
+analysis_data_with_density <- analysis_data_categories %>%
+  left_join(population_density, by = c("LSOA code" = "mnemonic")) %>%
+  filter(!is.na(`2021`)) %>%
+  mutate(
+    population_density = `2021`,
+    log_population_density = log(population_density + 0.001)
+  )
+
+# Models with population density control
+property_density_model <- lm(log_property_crime_rate ~ log_student_migration_rate + 
+                            log_uk_migration_rate + log_outside_uk_migration_rate + 
+                            log_population_density, 
+                            data = analysis_data_with_density)
+
+violent_density_model <- lm(log_violent_crime_rate ~ log_student_migration_rate + 
+                           log_uk_migration_rate + log_outside_uk_migration_rate + 
+                           log_population_density, 
+                           data = analysis_data_with_density)
+
+print("=== OLS REGRESSION WITH POPULATION DENSITY CONTROL ===")
+print("=== Property Crime Rate Model with Population Density Control ===")
+summary(property_density_model)
+
+print("=== Violent Crime Rate Model with Population Density Control ===")
+summary(violent_density_model)
+
+```
+
+```{r}
+
+# 10. Add Economic and Deprivation Controls
+# =========================================
+
+economic_data <- read_csv(file.path(base_path, "Economic activity status.csv"))
+deprivation_data <- read_csv(file.path(base_path, "Deprivation.csv"))
+
+# Find unemployment columns
+unemployed_col <- names(economic_data)[grepl("Economically active.*excluding.*full.*time.*students.*Unemployed", names(economic_data), ignore.case = TRUE)]
+total_economic_col <- names(economic_data)[grepl("Total.*All.*usual.*residents.*aged.*16.*years.*and.*over", names(economic_data), ignore.case = TRUE)]
+
+# Calculate unemployment rate
+if(length(unemployed_col) > 0 && length(total_economic_col) > 0) {
+  economic_processed <- economic_data %>%
+    mutate(
+      unemployed = get(unemployed_col[1]),
+      total_economic = get(total_economic_col[1]),
+      unemployment_rate = unemployed / total_economic
+    ) %>%
+    filter(!is.na(unemployment_rate), unemployment_rate >= 0)
+} else {
+  economic_processed <- economic_data %>%
+    mutate(
+      unemployed = `Economically active (excluding full-time students): Unemployed`,
+      total_economic = `Total: All usual residents aged 16 years and over`,
+      unemployment_rate = unemployed / total_economic
+    ) %>%
+    filter(!is.na(unemployment_rate), unemployment_rate >= 0)
+}
+
+# Find deprivation columns
+not_deprived_col <- names(deprivation_data)[grepl("Household.*is.*not.*deprived.*in.*any.*dimension", names(deprivation_data), ignore.case = TRUE)]
+total_households_col <- names(deprivation_data)[grepl("Total.*All.*households", names(deprivation_data), ignore.case = TRUE)]
+
+# Calculate deprivation rate
+if(length(not_deprived_col) > 0 && length(total_households_col) > 0) {
+  deprivation_processed <- deprivation_data %>%
+    mutate(
+      not_deprived = get(not_deprived_col[1]),
+      total_households = get(total_households_col[1]),
+      deprivation_rate = 1 - (not_deprived / total_households)
+    ) %>%
+    filter(!is.na(deprivation_rate), deprivation_rate >= 0)
+} else {
+  deprivation_processed <- deprivation_data %>%
+    mutate(
+      not_deprived = `Household is not deprived in any dimension`,
+      total_households = `Total: All households`,
+      deprivation_rate = 1 - (not_deprived / total_households)
+    ) %>%
+    filter(!is.na(deprivation_rate), deprivation_rate >= 0)
+}
+
+```
+
+```{r}
+
+# 11. Final Models with All Controls
+# ==================================
+
+# Merge all control variables
+analysis_data_full <- analysis_data_with_density %>%
+  left_join(economic_processed, by = c("LSOA code" = "mnemonic")) %>%
+  left_join(deprivation_processed, by = c("LSOA code" = "mnemonic")) %>%
+  filter(!is.na(unemployment_rate), !is.na(deprivation_rate),
+         unemployment_rate >= 0, deprivation_rate >= 0) %>%
+  mutate(
+    log_unemployment_rate = log(unemployment_rate + 0.001),
+    log_deprivation_rate = log(deprivation_rate + 0.001)
+  )
+
+# Final models with all control variables
+property_full_model <- lm(log_property_crime_rate ~ log_student_migration_rate + 
+                         log_uk_migration_rate + log_outside_uk_migration_rate + 
+                         log_population_density + log_unemployment_rate + log_deprivation_rate, 
+                         data = analysis_data_full)
+
+violent_full_model <- lm(log_violent_crime_rate ~ log_student_migration_rate + 
+                        log_uk_migration_rate + log_outside_uk_migration_rate + 
+                        log_population_density + log_unemployment_rate + log_deprivation_rate, 
+                        data = analysis_data_full)
+
+print("=== FINAL OLS REGRESSION WITH ALL CONTROL VARIABLES ===")
+print("=== Property Crime Rate Model with All Controls ===")
+summary(property_full_model)
+
+print("=== Violent Crime Rate Model with All Controls ===")
+summary(violent_full_model)
+
+```
+```{r}
+
+# ===============================
+# Panel Data and Spatial Analysis
+# ===============================
+
+# Load additional spatial analysis libraries
+library(spdep)
+library(sf)
+library(spatialreg)
+
+```
+
+```{r}
+
+# 1. Prepare Annual Panel Data
+# ============================
+
+# Process crime data with year information for fixed effects
+crime_data_yearly <- crime_data_combined %>%
+  filter(!is.na(`LSOA code`)) %>%
+  mutate(
+    year = as.numeric(str_extract(source_file, "\\d{4}")),
+    month = as.numeric(str_extract(source_file, "(?<=-)\\d{2}")),
+    year_fe = factor(year)
+  ) %>%
+  group_by(`LSOA code`, year, year_fe, Crime_Category) %>%
+  summarise(crime_count = n(), .groups = 'drop')
+
+# Convert to wide format for property and violent crimes
+crime_yearly_wide <- crime_data_yearly %>%
+  pivot_wider(names_from = Crime_Category, values_from = crime_count, values_fill = 0) %>%
+  rename(property_crime_count = `Property Crime`, violent_crime_count = `Violent Crime`)
+
+```
+
+```{r}
+
+# 2. Calculate Annual Crime Rates
+# ===============================
+
+crime_yearly_rates <- crime_yearly_wide %>%
+  left_join(population_data, by = c("LSOA code" = "LSOA 2021 Code")) %>%
+  mutate(
+    population = `Total`,
+    property_crime_rate = (property_crime_count / population) * 10000,
+    violent_crime_rate = (violent_crime_count / population) * 10000
+  ) %>%
+  filter(!is.na(population), population > 0, 
+         property_crime_rate > 0, violent_crime_rate > 0)
+
+```
+
+```{r}
+
+# 3. Merge Control Variables for Panel Data
+# =========================================
+
+analysis_data_panel <- crime_yearly_rates %>%
+  left_join(migrant_categories, by = c("LSOA code" = "mnemonic")) %>%
+  left_join(population_density, by = c("LSOA code" = "mnemonic")) %>%
+  left_join(economic_processed, by = c("LSOA code" = "mnemonic")) %>%
+  left_join(deprivation_processed, by = c("LSOA code" = "mnemonic")) %>%
+  filter(
+    !is.na(student_migration_rate), !is.na(uk_migration_rate), 
+    !is.na(outside_uk_migration_rate), !is.na(`2021`), 
+    !is.na(unemployment_rate), !is.na(deprivation_rate),
+    student_migration_rate >= 0, uk_migration_rate >= 0, 
+    outside_uk_migration_rate >= 0, unemployment_rate >= 0, 
+    deprivation_rate >= 0
+  ) %>%
+  mutate(
+    # Create log variables
+    log_student_migration_rate = log(student_migration_rate + 0.001),
+    log_uk_migration_rate = log(uk_migration_rate + 0.001),
+    log_outside_uk_migration_rate = log(outside_uk_migration_rate + 0.001),
+    log_property_crime_rate = log(property_crime_rate + 0.001),
+    log_violent_crime_rate = log(violent_crime_rate + 0.001),
+    population_density = `2021`,
+    log_population_density = log(population_density + 0.001),
+    log_unemployment_rate = log(unemployment_rate + 0.001),
+    log_deprivation_rate = log(deprivation_rate + 0.001),
+    lsoa_code = `LSOA code`
+  )
+
+```
+
+```{r}
+
+# 4. Panel Data Quality Check
+# ===========================
+
+print("=== Panel Data Quality Check ===")
+print("Dataset dimensions:")
+print(dim(analysis_data_panel))
+
+print("Year distribution:")
+print(table(analysis_data_panel$year_fe))
+
+print("LSOA count by year:")
+year_lsoa_count <- analysis_data_panel %>%
+  group_by(year) %>%
+  summarise(n_lsoa = n_distinct(`LSOA code`), .groups = 'drop')
+print(year_lsoa_count)
+
+print("Descriptive statistics for main variables:")
+summary_vars <- analysis_data_panel %>%
+  select(property_crime_rate, violent_crime_rate, student_migration_rate, 
+         uk_migration_rate, outside_uk_migration_rate, population_density,
+         unemployment_rate, deprivation_rate)
+print(summary(summary_vars))
+
+```
+
+```{r}
+
+# 5. Year Fixed Effects Regression
+# ================================
+
+print("=== Year Fixed Effects Regression Analysis ===")
+
+year_levels <- length(unique(analysis_data_panel$year_fe[!is.na(analysis_data_panel$year_fe)]))
+
+if(year_levels >= 2) {
+  # Property crime model with year fixed effects
+  property_year_fe <- lm(log_property_crime_rate ~ log_student_migration_rate + 
+                         log_uk_migration_rate + log_outside_uk_migration_rate + 
+                         log_population_density + log_unemployment_rate + 
+                         log_deprivation_rate + year_fe,
+                         data = analysis_data_panel)
+  
+  # Violent crime model with year fixed effects
+  violent_year_fe <- lm(log_violent_crime_rate ~ log_student_migration_rate + 
+                        log_uk_migration_rate + log_outside_uk_migration_rate + 
+                        log_population_density + log_unemployment_rate + 
+                        log_deprivation_rate + year_fe,
+                        data = analysis_data_panel)
+  
+  print("=== Property Crime Model (Year Fixed Effects) ===")
+  print(summary(property_year_fe))
+  
+  print("=== Violent Crime Model (Year Fixed Effects) ===")
+  print(summary(violent_year_fe))
+  
+  # Display year fixed effects coefficients
+  print("=== Year Fixed Effects Coefficients (Property Crime) ===")
+  year_coefs_property <- coef(property_year_fe)[grepl("year_fe", names(coef(property_year_fe)))]
+  print(year_coefs_property)
+  
+  print("=== Year Fixed Effects Coefficients (Violent Crime) ===")
+  year_coefs_violent <- coef(violent_year_fe)[grepl("year_fe", names(coef(violent_year_fe)))]
+  print(year_coefs_violent)
+  
+} else {
+  print("Insufficient year variation for fixed effects regression")
+}
+
+print("=== Year Fixed Effects Analysis Complete ===")
+
+```
+
+```{r}
+
+# 6. Add Local Authority Fixed Effects
+# ====================================
+
+print("=== Adding Local Authority Fixed Effects ===")
+
+# Find LSOA name column
+lsoa_name_col <- names(population_data)[grepl("LSOA.*Name|Name.*LSOA|name|LAD.*Name", names(population_data), ignore.case = TRUE)]
+
+if(length(lsoa_name_col) > 0) {
+  # Create local authority mapping
+  la_mapping <- population_data %>%
+    select(`LSOA 2021 Code`, all_of(lsoa_name_col[1])) %>%
+    rename(lsoa_code = `LSOA 2021 Code`, lsoa_name = lsoa_name_col[1]) %>%
+    mutate(
+      local_authority = str_extract(lsoa_name, "^[^\\s]+"),
+      local_authority_fe = factor(local_authority)
+    )
+  
+  # Merge local authority information
+  analysis_data_with_la <- analysis_data_panel %>%
+    left_join(la_mapping %>% select(lsoa_code, local_authority, local_authority_fe), 
+              by = c("LSOA code" = "lsoa_code")) %>%
+    filter(!is.na(local_authority))
+  
+  print("Data dimensions after adding local authority info:")
+  print(dim(analysis_data_with_la))
+  
+} else {
+  print("LSOA name column not found, check column names")
+  analysis_data_with_la <- analysis_data_panel
+}
+
+```
+
+```{r}
+
+# 7. Local Authority Fixed Effects Regression
+# ===========================================
+
+print("=== Local Authority Fixed Effects Regression Analysis ===")
+
+if(exists("analysis_data_with_la") && "local_authority_fe" %in% names(analysis_data_with_la)) {
+  
+  la_levels <- length(unique(analysis_data_with_la$local_authority_fe[!is.na(analysis_data_with_la$local_authority_fe)]))
+  print(paste("Local authority fixed effects have", la_levels, "levels"))
+  
+  if(la_levels >= 2) {
+    # Property crime model with local authority fixed effects
+    property_la_fe <- lm(log_property_crime_rate ~ log_student_migration_rate + 
+                        log_uk_migration_rate + log_outside_uk_migration_rate + 
+                        log_population_density + log_unemployment_rate + 
+                        log_deprivation_rate + local_authority_fe,
+                        data = analysis_data_with_la)
+    
+    # Violent crime model with local authority fixed effects
+    violent_la_fe <- lm(log_violent_crime_rate ~ log_student_migration_rate + 
+                       log_uk_migration_rate + log_outside_uk_migration_rate + 
+                       log_population_density + log_unemployment_rate + 
+                       log_deprivation_rate + local_authority_fe,
+                       data = analysis_data_with_la)
+    
+    print("=== Property Crime Model (Local Authority Fixed Effects) ===")
+    print(summary(property_la_fe))
+    
+    print("=== Violent Crime Model (Local Authority Fixed Effects) ===")
+    print(summary(violent_la_fe))
+    
+  } else {
+    print("Insufficient local authority variation for fixed effects regression")
+  }
+  
+} else {
+  print("Unable to create local authority fixed effects variable")
+}
+
+```
+
+```{r}
+
+# 8. Two-way Fixed Effects Regression
+# ===================================
+
+print("=== Two-way Fixed Effects Regression Analysis ===")
+
+if(exists("analysis_data_with_la") && "local_authority_fe" %in% names(analysis_data_with_la) && 
+   "year_fe" %in% names(analysis_data_with_la)) {
+  
+  year_levels_la <- length(unique(analysis_data_with_la$year_fe[!is.na(analysis_data_with_la$year_fe)]))
+  la_levels_la <- length(unique(analysis_data_with_la$local_authority_fe[!is.na(analysis_data_with_la$local_authority_fe)]))
+  
+  print(paste("In local authority data, year fixed effects have", year_levels_la, "levels"))
+  print(paste("Local authority fixed effects have", la_levels_la, "levels"))
+  
+  # Display year and local authority distributions
+  print("Year distribution:")
+  print(table(analysis_data_with_la$year_fe))
+  print("Local authority distribution:")
+  print(table(analysis_data_with_la$local_authority_fe))
+  
+  if(year_levels_la >= 2 && la_levels_la >= 2) {
+    # Property crime model with two-way fixed effects
+    property_twoway_fe <- lm(log_property_crime_rate ~ log_student_migration_rate + 
+                            log_uk_migration_rate + log_outside_uk_migration_rate + 
+                            log_population_density + log_unemployment_rate + 
+                            log_deprivation_rate + year_fe + local_authority_fe,
+                            data = analysis_data_with_la)
+    
+    # Violent crime model with two-way fixed effects
+    violent_twoway_fe <- lm(log_violent_crime_rate ~ log_student_migration_rate + 
+                           log_uk_migration_rate + log_outside_uk_migration_rate + 
+                           log_population_density + log_unemployment_rate + 
+                           log_deprivation_rate + year_fe + local_authority_fe,
+                           data = analysis_data_with_la)
+    
+    print("=== Property Crime Model (Year + Local Authority Two-way Fixed Effects) ===")
+    print(summary(property_twoway_fe))
+    
+    print("=== Violent Crime Model (Year + Local Authority Two-way Fixed Effects) ===")
+    print(summary(violent_twoway_fe))
+  }
+}
+
+```
+
+```{r}
+
+# 9. Spatial Autocorrelation Testing
+# ==================================
+
+print("=== Spatial Autocorrelation Testing ===")
+
+# Prepare spatial data (ensure one record per LSOA using averages)
+spatial_data <- analysis_data_full %>%
+  group_by(`LSOA code`) %>%
+  summarise(
+    log_property_crime_rate = mean(log_property_crime_rate, na.rm = TRUE),
+    log_violent_crime_rate = mean(log_violent_crime_rate, na.rm = TRUE),
+    log_student_migration_rate = first(log_student_migration_rate),
+    log_uk_migration_rate = first(log_uk_migration_rate),
+    log_outside_uk_migration_rate = first(log_outside_uk_migration_rate),
+    log_population_density = first(log_population_density),
+    log_unemployment_rate = first(log_unemployment_rate),
+    log_deprivation_rate = first(log_deprivation_rate),
+    .groups = 'drop'
+  ) %>%
+  filter(!is.na(log_property_crime_rate), !is.na(log_violent_crime_rate),
+         !is.infinite(log_property_crime_rate), !is.infinite(log_violent_crime_rate))
+
+print(paste("Number of LSOAs for spatial analysis:", nrow(spatial_data)))
+
+```
+
+```{r}
+
+# 10. Create Spatial Weights Matrix
+# =================================
+
+# Create simplified neighbor structure (for demonstration purposes)
+create_simple_neighbors <- function(data, k = 5) {
+  n <- nrow(data)
+  lsoa_codes <- data$`LSOA code`
+  
+  nb_list <- vector("list", n)
+  
+  for(i in 1:n) {
+    distances <- adist(lsoa_codes[i], lsoa_codes)
+    neighbors <- order(distances)[2:(k+1)]
+    nb_list[[i]] <- neighbors
+  }
+  
+  class(nb_list) <- "nb"
+  attr(nb_list, "region.id") <- as.character(1:n)
+  return(nb_list)
+}
+
+# Create robust neighbor structure
+create_robust_neighbors <- function(data, k = 8) {
+  n <- nrow(data)
+  lsoa_codes <- data$`LSOA code`
+  numeric_parts <- as.numeric(gsub("[^0-9]", "", lsoa_codes))
+  
+  nb_list <- vector("list", n)
+  
+  for(i in 1:n) {
+    if(!is.na(numeric_parts[i])) {
+      distances <- abs(numeric_parts - numeric_parts[i])
+      distances[i] <- Inf
+      neighbors <- which(rank(distances, ties.method = "first") <= k)
+      nb_list[[i]] <- neighbors
+    } else {
+      possible_neighbors <- setdiff(1:n, i)
+      nb_list[[i]] <- sample(possible_neighbors, min(k, length(possible_neighbors)))
+    }
+  }
+  
+  class(nb_list) <- "nb"
+  attr(nb_list, "region.id") <- as.character(1:n)
+  return(nb_list)
+}
+
+# Create spatial weights matrix
+tryCatch({
+  nb_simple <- create_simple_neighbors(spatial_data, k = 5)
+  listw_simple <- nb2listw(nb_simple, style = "W", zero.policy = TRUE)
+  print("Spatial weights matrix created successfully")
+}, error = function(e) {
+  print(paste("Initial spatial weights matrix creation failed:", e$message))
+  
+  # Try robust method
+  tryCatch({
+    nb_robust <- create_robust_neighbors(spatial_data, k = 8)
+    listw_simple <- nb2listw(nb_robust, style = "W", zero.policy = TRUE)
+    print("Robust spatial weights matrix created successfully")
+  }, error = function(e) {
+    print(paste("Robust spatial weights matrix creation failed:", e$message))
+    print("Recommend using real geographic coordinates")
+  })
+})
+
+```
+
+```{r}
+
+# 11. Spatial Autocorrelation Tests
+# =================================
+
+if(exists("listw_simple")) {
+  
+  print("=== Moran's I Test ===")
+  
+  # Moran's I test for dependent variables
+  moran_property <- moran.test(spatial_data$log_property_crime_rate, 
+                              listw_simple, zero.policy = TRUE)
+  moran_violent <- moran.test(spatial_data$log_violent_crime_rate, 
+                             listw_simple, zero.policy = TRUE)
+  
+  print("Property crime rate Moran's I test:")
+  print(moran_property)
+  
+  print("Violent crime rate Moran's I test:")
+  print(moran_violent)
+  
+  print("=== OLS Residual Spatial Autocorrelation Test ===")
+  
+  # Refit OLS models for spatial analysis data
+  ols_property_spatial <- lm(log_property_crime_rate ~ log_student_migration_rate + 
+                            log_uk_migration_rate + log_outside_uk_migration_rate + 
+                            log_population_density + log_unemployment_rate + 
+                            log_deprivation_rate, 
+                            data = spatial_data)
+  
+  ols_violent_spatial <- lm(log_violent_crime_rate ~ log_student_migration_rate + 
+                           log_uk_migration_rate + log_outside_uk_migration_rate + 
+                           log_population_density + log_unemployment_rate + 
+                           log_deprivation_rate, 
+                           data = spatial_data)
+  
+  # Test residual spatial autocorrelation
+  moran_resid_property <- moran.test(residuals(ols_property_spatial), 
+                                    listw_simple, zero.policy = TRUE)
+  moran_resid_violent <- moran.test(residuals(ols_violent_spatial), 
+                                   listw_simple, zero.policy = TRUE)
+  
+  print("Property crime rate OLS residual Moran's I test:")
+  print(moran_resid_property)
+  
+  print("Violent crime rate OLS residual Moran's I test:")
+  print(moran_resid_violent)
+  
+  print("=== Lagrange Multiplier Test (SAR vs SEM) ===")
+  
+  # LM tests to choose between SAR and SEM
+  lm_test_property <- lm.LMtests(ols_property_spatial, listw_simple, 
+                                test = c("LMlag", "LMerr", "RLMlag", "RLMerr", "SARMA"))
+  lm_test_violent <- lm.LMtests(ols_violent_spatial, listw_simple, 
+                               test = c("LMlag", "LMerr", "RLMlag", "RLMerr", "SARMA"))
+  
+  print("Property crime rate LM test results:")
+  print(lm_test_property)
+  
+  print("Violent crime rate LM test results:")
+  print(lm_test_violent)
+}
+
+```
+
+```{r}
+
+# 12. SAR Spatial Spillover Effects Analysis
+# ==========================================
+
+print("=== SAR Spatial Spillover Effects Analysis ===")
+
+# SAR models with Local Authority and Year Fixed Effects
+if (exists("listw_simple") && exists("analysis_data_with_la") && 
+    "local_authority" %in% names(analysis_data_with_la) &&
+    "year" %in% names(analysis_data_with_la)) {
+  
+  print("=== SAR Models: Local Authority + Year Fixed Effects ===")
+  
+  # Create spatial data with LA and Year information
+  spatial_data_fe <- analysis_data_full %>%
+    left_join(analysis_data_with_la %>% 
+                select(`LSOA code`, local_authority, year) %>% 
+                distinct(), 
+              by = "LSOA code") %>%
+    filter(!is.na(local_authority), !is.na(year)) %>%
+    group_by(`LSOA code`, year) %>%
+    summarise(
+      log_property_crime_rate = mean(log_property_crime_rate, na.rm = TRUE),
+      log_violent_crime_rate = mean(log_violent_crime_rate, na.rm = TRUE),
+      log_student_migration_rate = first(log_student_migration_rate),
+      log_uk_migration_rate = first(log_uk_migration_rate),
+      log_outside_uk_migration_rate = first(log_outside_uk_migration_rate),
+      log_population_density = first(log_population_density),
+      log_unemployment_rate = first(log_unemployment_rate),
+      log_deprivation_rate = first(log_deprivation_rate),
+      local_authority = first(local_authority),
+      year = first(year),
+      .groups = 'drop'
+    )
+  
+  # Create LA and Year dummy variables
+  la_dummies <- model.matrix(~ local_authority - 1, data = spatial_data_fe)
+  year_dummies <- model.matrix(~ factor(year) - 1, data = spatial_data_fe)
+  
+  spatial_data_with_dummies <- cbind(spatial_data_fe, la_dummies, year_dummies)
+  
+  # Create spatial weights matrix for fixed effects data
+  nb_fe <- create_simple_neighbors(spatial_data_fe, k = 5)
+  listw_fe <- nb2listw(nb_fe, style = "W", zero.policy = TRUE)
+  
+  # SAR model with fixed effects (Property crime)
+  sar_property_fe <- tryCatch({
+    lagsarlm(log_property_crime_rate ~ log_student_migration_rate + 
+               log_uk_migration_rate + log_outside_uk_migration_rate + 
+               log_population_density + log_unemployment_rate + 
+               log_deprivation_rate + . - `LSOA code` - local_authority - year - 
+               log_property_crime_rate - log_violent_crime_rate,
+             data = spatial_data_with_dummies, listw = listw_fe, zero.policy = TRUE)
+  }, error = function(e) {
+    print(paste("SAR fixed effects model failed for property crime:", e$message))
+    return(NULL)
+  })
+  
+  # SAR model with fixed effects (Violent crime)
+  sar_violent_fe <- tryCatch({
+    lagsarlm(log_violent_crime_rate ~ log_student_migration_rate + 
+               log_uk_migration_rate + log_outside_uk_migration_rate + 
+               log_population_density + log_unemployment_rate + 
+               log_deprivation_rate + . - `LSOA code` - local_authority - year - 
+               log_property_crime_rate - log_violent_crime_rate,
+             data = spatial_data_with_dummies, listw = listw_fe, zero.policy = TRUE)
+  }, error = function(e) {
+    print(paste("SAR fixed effects model failed for violent crime:", e$message))
+    return(NULL)
+  })
+  
+  # Display results
+  if (!is.null(sar_property_fe)) {
+    print("=== SAR Model: Property Crime Rate (LA FE + Year FE) ===")
+    print(summary(sar_property_fe))
+  }
+  if (!is.null(sar_violent_fe)) {
+    print("=== SAR Model: Violent Crime Rate (LA FE + Year FE) ===")
+    print(summary(sar_violent_fe))
+  }
+  
+} else {
+  print("No local authority or year information, unable to create SAR (LA FE + Year FE)")
+}
+
+print("=== Analysis Complete ===")
+
+```
+
+
+```{r}
+
+# ==================
+# Data Visualization
+# ==================
+
+library(sf)
+library(tmap)
+library(dplyr)
+library(knitr)
+library(kableExtra)
+library(moments)
+
+tmap_mode("plot")
+base_path <- "C:/Users/LuChunyi/Desktop/Study/LSE/Dissertation/Data"
+
+```
+
+```{r}
+
+# 1. West Midlands Base Map
+# ============================
+
+# Load England UTLA data
+england_utla <- read_sf(paste0(base_path, "/england_utla_2022_bgc/england_utla_2022_bgc.shp"))
+
+# West Midlands UTLA names
+west_midlands_names <- c("Birmingham", "Coventry", "Dudley", "Sandwell", "Solihull", "Walsall", "Wolverhampton")
+
+# Try different field names for filtering
+possible_name_fields <- c("UTLA21NM", "NAME", "utla21nm", "name", "UTLA_NAME", "Local_Authority")
+west_midlands_utla <- NULL
+
+for(field in possible_name_fields) {
+  if(field %in% names(england_utla)) {
+    west_midlands_utla <- england_utla %>%
+      filter(get(field) %in% west_midlands_names)
+    
+    if(nrow(west_midlands_utla) > 0) {
+      name_field <- field
+      break
+    } else {
+      # Try fuzzy matching
+      west_midlands_utla <- england_utla %>%
+        filter(grepl("Birmingham|Coventry|Dudley|Sandwell|Solihull|Walsall|Wolverhampton", 
+                     get(field), ignore.case = TRUE))
+      
+      if(nrow(west_midlands_utla) > 0) {
+        name_field <- field
+        break
+      }
+    }
+  }
+}
+
+# Fallback: geographic filtering
+if(is.null(west_midlands_utla) || nrow(west_midlands_utla) == 0) {
+  west_midlands_bbox <- st_bbox(c(xmin = -2.5, ymin = 52.2, xmax = -1.3, ymax = 52.8), crs = st_crs(4326))
+  west_midlands_polygon <- st_as_sfc(west_midlands_bbox)
+  
+  if(st_crs(england_utla)$input != "EPSG:4326") {
+    west_midlands_polygon <- st_transform(west_midlands_polygon, st_crs(england_utla))
+  }
+  
+  west_midlands_utla <- england_utla[st_intersects(england_utla, west_midlands_polygon, sparse = FALSE), ]
+  name_field <- possible_name_fields[1]
+}
+
+west_midlands_utla <- st_transform(west_midlands_utla, crs = 4326)
+
+# Create base map
+west_midlands_map <- tm_shape(west_midlands_utla) +
+  tm_polygons(col = "white", alpha = 0.6, border.col = "black", border.lwd = 1.5) +
+  tm_text(name_field, size = 0.7, col = "black", fontface = "plain", auto.placement = TRUE) +
+  tm_layout(main.title = "Figure 1: Geographical Regions of West Midlands", main.title.size = 1.1, main.title.position = "center", frame = FALSE) +
+  tm_compass(position = c("right", "top"), size = 1, type = "4star") +
+  tm_scale_bar(position = c("left", "bottom"), breaks = c(0, 10, 20), size = 0.7)
+
+print(west_midlands_map)
+
+```
+
+```{r}
+
+# 2. Crime Rate Choropleth Maps
+# ============================
+
+# Load boundary data
+lsoa_boundaries <- read_sf(paste0(base_path, "/england_lsoa_2021_bgc/england_lsoa_2021_bgc.shp"))
+west_midlands <- st_read(paste0(base_path, "/west-midlands.gpkg"))
+
+# Transform coordinate systems
+lsoa_boundaries <- st_transform(lsoa_boundaries, crs = 27700) %>% st_make_valid()
+england_utla_27700 <- st_transform(england_utla, crs = 27700)
+west_midlands_27700 <- st_transform(west_midlands, crs = 27700)
+
+# Clip boundaries
+utla_clipped <- st_intersection(england_utla_27700, west_midlands_27700)
+lsoa_clipped <- st_intersection(lsoa_boundaries, west_midlands_27700)
+
+# Crime classification function
+classify_crime <- function(crime_type) {
+  property_crimes <- c("Bicycle theft", "Burglary", "Criminal damage and arson", "Other theft", 
+                      "Shoplifting", "Theft from the person", "Vehicle crime")
+  violent_crimes <- c("Violence and sexual offences", "Anti-social behaviour", "Public order", "Robbery")
+  other_crimes <- c("Drugs", "Other crime", "Possession of weapons")
+  
+  if (crime_type %in% property_crimes) return("Property Crime")
+  else if (crime_type %in% violent_crimes) return("Violent Crime")
+  else if (crime_type %in% other_crimes) return("Other Crime")
+  else return("Unclassified")
+}
+
+# Add crime classification to datasets
+crime_2021_2022 <- crime_2021_2022 %>% mutate(Crime_Category = sapply(`Crime type`, classify_crime))
+crime_2022_2023 <- crime_2022_2023 %>% mutate(Crime_Category = sapply(`Crime type`, classify_crime))
+crime_2023_2024 <- crime_2023_2024 %>% mutate(Crime_Category = sapply(`Crime type`, classify_crime))
+crime_2024_2025 <- crime_2024_2025 %>% mutate(Crime_Category = sapply(`Crime type`, classify_crime))
+
+# Prepare period data function
+prepare_period_data <- function(crime_data, period_name) {
+  crime_counts <- crime_data %>%
+    group_by(`LSOA code`, Crime_Category) %>%
+    summarise(crime_count = n(), .groups = 'drop')
+  
+  violent_data <- crime_counts %>%
+    filter(Crime_Category == "Violent Crime") %>%
+    left_join(population_data, by = c("LSOA code" = "LSOA 2021 Code")) %>%
+    mutate(
+      Total = as.numeric(gsub(",", "", Total)),
+      violent_per_10000 = (crime_count * 10000) / Total,
+      period = period_name
+    ) %>%
+    select(`LSOA code`, violent_per_10000, period)
+  
+  property_data <- crime_counts %>%
+    filter(Crime_Category == "Property Crime") %>%
+    left_join(population_data, by = c("LSOA code" = "LSOA 2021 Code")) %>%
+    mutate(
+      Total = as.numeric(gsub(",", "", Total)),
+      property_per_10000 = (crime_count * 10000) / Total,
+      period = period_name
+    ) %>%
+    select(`LSOA code`, property_per_10000, period)
+  
+  return(list(violent = violent_data, property = property_data))
+}
+
+# Prepare data for each period
+period_2021_2022 <- prepare_period_data(crime_2021_2022, "2021-05 to 2022-04")
+period_2022_2023 <- prepare_period_data(crime_2022_2023, "2022-05 to 2023-04")
+period_2023_2024 <- prepare_period_data(crime_2023_2024, "2023-05 to 2024-04")
+period_2024_2025 <- prepare_period_data(crime_2024_2025, "2024-05 to 2025-04")
+
+# Choropleth map function
+create_choropleth_map <- function(lsoa_data, crime_column, crime_type, period_name, color_palette, figure_number) {
+  map_data <- lsoa_clipped %>%
+    left_join(lsoa_data, by = c("lsoa21cd" = "LSOA code")) %>%
+    filter(!is.na(!!sym(crime_column)))
+  
+  fixed_breaks <- c(0, 500, 1000, 3000, 6000, 10000, 15000, 20000, 25000)
+  
+  tm_shape(map_data) +
+    tm_polygons(crime_column, palette = color_palette, style = "fixed", breaks = fixed_breaks,
+                title = paste(crime_type, "per 10,000 People"), border.alpha = 0.1) +
+    tm_shape(utla_clipped) +
+    tm_borders(col = "grey40", lwd = 1.2) +
+    tm_layout(main.title = paste0("Figure ", figure_number, ": ", crime_type, " Rate per 10,000 People (", period_name, ")"),
+              main.title.size = 1, main.title.position = "center", legend.outside = TRUE,
+              legend.outside.position = "right", legend.title.size = 0.9, legend.text.size = 0.7,
+              frame = FALSE) +
+    tm_compass(position = c("right", "top"), size = 1.2, type = "4star")
+}
+
+violent_map_2021_2022 <- create_choropleth_map(period_2021_2022$violent, "violent_per_10000", "Violent Crime", "2021-05 to 2022-04", "Reds", 2)
+property_map_2021_2022 <- create_choropleth_map(period_2021_2022$property, "property_per_10000", "Property Crime", "2021-05 to 2022-04", "Blues", 3)
+violent_map_2022_2023 <- create_choropleth_map(period_2022_2023$violent, "violent_per_10000", "Violent Crime", "2022-05 to 2023-04", "Reds", 4)
+property_map_2022_2023 <- create_choropleth_map(period_2022_2023$property, "property_per_10000", "Property Crime", "2022-05 to 2023-04", "Blues", 5)
+violent_map_2023_2024 <- create_choropleth_map(period_2023_2024$violent, "violent_per_10000", "Violent Crime", "2023-05 to 2024-04", "Reds", 6)
+property_map_2023_2024 <- create_choropleth_map(period_2023_2024$property, "property_per_10000", "Property Crime", "2023-05 to 2024-04", "Blues", 7)
+violent_map_2024_2025 <- create_choropleth_map(period_2024_2025$violent, "violent_per_10000", "Violent Crime", "2024-05 to 2025-04", "Reds", 8)
+property_map_2024_2025 <- create_choropleth_map(period_2024_2025$property, "property_per_10000", "Property Crime", "2024-05 to 2025-04", "Blues", 9)
+
+print(violent_map_2021_2022)
+print(property_map_2021_2022)
+print(violent_map_2022_2023)
+print(property_map_2022_2023)
+print(violent_map_2023_2024)
+print(property_map_2023_2024)
+print(violent_map_2024_2025)
+print(property_map_2024_2025)
+
+```
+
+```{r}
+
+# 3. City-Level Crime Rate Analysis
+# ============================
+
+# Create LSOA to city mapping
+west_midlands_cities <- england_utla %>%
+  filter(utla22nm %in% c("Birmingham", "Coventry", "Dudley", "Sandwell", "Solihull", "Walsall", "Wolverhampton")) %>%
+  st_transform(crs = 27700) %>%
+  select(city = utla22nm, geometry)
+
+lsoa_city_mapping <- st_join(lsoa_clipped, west_midlands_cities) %>%
+  st_drop_geometry() %>%
+  select(lsoa21cd, city) %>%
+  filter(!is.na(city))
+
+# Calculate city crime rates
+calculate_city_crime_rates <- function(period_data, year_label) {
+  violent_city <- period_data$violent %>%
+    left_join(lsoa_city_mapping, by = c("LSOA code" = "lsoa21cd")) %>%
+    filter(!is.na(city)) %>%
+    group_by(city) %>%
+    summarise(violent_rate = mean(violent_per_10000, na.rm = TRUE), .groups = 'drop') %>%
+    mutate(year = year_label)
+  
+  property_city <- period_data$property %>%
+    left_join(lsoa_city_mapping, by = c("LSOA code" = "lsoa21cd")) %>%
+    filter(!is.na(city)) %>%
+    group_by(city) %>%
+    summarise(property_rate = mean(property_per_10000, na.rm = TRUE), .groups = 'drop') %>%
+    mutate(year = year_label)
+  
+  violent_city %>%
+    full_join(property_city, by = c("city", "year")) %>%
+    mutate(total_rate = violent_rate + property_rate)
+}
+
+# Calculate rates for each year
+city_rates_2021 <- calculate_city_crime_rates(period_2021_2022, "2021-2022")
+city_rates_2022 <- calculate_city_crime_rates(period_2022_2023, "2022-2023")
+city_rates_2023 <- calculate_city_crime_rates(period_2023_2024, "2023-2024")
+city_rates_2024 <- calculate_city_crime_rates(period_2024_2025, "2024-2025")
+
+all_city_rates <- bind_rows(city_rates_2021, city_rates_2022, city_rates_2023, city_rates_2024)
+
+# Create change analysis tables
+create_change_table <- function(crime_type = "total") {
+  rate_column <- case_when(
+    crime_type == "total" ~ "total_rate",
+    crime_type == "violent" ~ "violent_rate",
+    crime_type == "property" ~ "property_rate"
+  )
+  
+  first_year <- all_city_rates %>%
+    filter(year == "2021-2022") %>%
+    select(city, rate_2021 = !!sym(rate_column))
+  
+  last_year <- all_city_rates %>%
+    filter(year == "2024-2025") %>%
+    select(city, rate_2025 = !!sym(rate_column))
+  
+  first_year %>%
+    full_join(last_year, by = "city") %>%
+    mutate(
+      change = rate_2025 - rate_2021,
+      change_percent = ((rate_2025 - rate_2021) / rate_2021) * 100
+    ) %>%
+    arrange(desc(change)) %>%
+    mutate(across(where(is.numeric), ~round(.x, 2)))
+}
+
+# Generate change tables
+total_crime_table <- create_change_table("total")
+colnames(total_crime_table) <- c("City", "2021 Crime Rate", "2025 Crime Rate", "Change", "Change %")
+
+violent_crime_table <- create_change_table("violent")
+colnames(violent_crime_table) <- c("City", "2021 Violent Rate", "2025 Violent Rate", "Change", "Change %")
+
+property_crime_table <- create_change_table("property")
+colnames(property_crime_table) <- c("City", "2021 Property Rate", "2025 Property Rate", "Change", "Change %")
+
+# Simplified table
+simplified_table <- total_crime_table %>%
+  select(City, `2021 Crime Rate`, `2025 Crime Rate`, Change) %>%
+  rename(`2021` = `2021 Crime Rate`, `2025` = `2025 Crime Rate`)
+
+# Yearly trend table
+yearly_trend <- all_city_rates %>%
+  select(city, year, total_rate) %>%
+  pivot_wider(names_from = year, values_from = total_rate) %>%
+  mutate(across(where(is.numeric), ~round(.x, 2))) %>%
+  arrange(city)
+colnames(yearly_trend) <- c("City", "2021-2022", "2022-2023", "2023-2024", "2024-2025")
+
+# Display crime analysis results
+cat("=== West Midlands Crime Rate Analysis (2021-2025) ===\n\n")
+cat("1. Total Crime Rate Changes (per 10,000 people)\n")
+print(kable(total_crime_table, format = "markdown", align = 'c'))
+cat("\n2. Violent Crime Rate Changes (per 10,000 people)\n")
+print(kable(violent_crime_table, format = "markdown", align = 'c'))
+cat("\n3. Property Crime Rate Changes (per 10,000 people)\n")
+print(kable(property_crime_table, format = "markdown", align = 'c'))
+cat("\n4. Simplified Crime Rate Table\n")
+print(kable(simplified_table, format = "markdown", align = 'c'))
+cat("\n5. Annual Crime Rate Trends (per 10,000 people)\n")
+print(kable(yearly_trend, format = "markdown", align = 'c'))
+
+```
+
+```{r}
+
+# 4. Economic Variables Analysis
+# ============================
+
+# Filter LSOA boundaries to West Midlands region
+west_midlands_lsoa_codes <- unique(crime_data_combined$`LSOA code`)
+west_midlands_lsoa_codes <- west_midlands_lsoa_codes[!is.na(west_midlands_lsoa_codes)]
+
+west_midlands_lsoa_boundaries <- lsoa_boundaries %>%
+  filter(lsoa21cd %in% west_midlands_lsoa_codes)
+
+west_midlands_lsoa_boundaries <- st_intersection(west_midlands_lsoa_boundaries, west_midlands_27700)
+
+# Economic map function
+create_economic_map <- function(map_data, value_column, map_title, legend_title, color_palette) {
+  tm_shape(map_data) +
+    tm_polygons(value_column, palette = color_palette, style = "jenks", n = 7,
+                title = legend_title, border.alpha = 0.1) +
+    tm_shape(utla_clipped) +
+    tm_borders(col = "grey40", lwd = 1.2) +
+    tm_layout(main.title = map_title, main.title.size = 1.1, main.title.position = "center",
+              legend.outside = TRUE, legend.outside.position = "right", legend.title.size = 0.9,
+              legend.text.size = 0.7, frame = FALSE) +
+    tm_compass(position = c("right", "top"), size = 1, type = "4star")
+}
+
+# Create economic maps
+create_economic_map <- function(map_data, value_column, map_title, legend_title, color_palette, figure_num) {
+  tm_shape(map_data) +
+    tm_polygons(value_column, palette = color_palette, style = "jenks", n = 7,
+                title = legend_title, border.alpha = 0.1) +
+    tm_shape(utla_clipped) +
+    tm_borders(col = "grey40", lwd = 1.2) +
+    tm_layout(main.title = paste0("Figure ", figure_num, ": ", map_title), 
+              main.title.size = 1.1, main.title.position = "center",
+              legend.outside = TRUE, legend.outside.position = "right", legend.title.size = 0.9,
+              legend.text.size = 0.7, frame = FALSE) +
+    tm_compass(position = c("right", "top"), size = 1, type = "4star")
+}
+
+pop_density_map <- create_economic_map(
+  population_density_map_data, "pop_density",
+  "Population Density Distribution in West Midlands",
+  "People per\nSquare kilometre", "Oranges", 13
+)
+
+unemployment_map <- create_economic_map(
+  unemployment_map_data, "unemployment_pct",
+  "Unemployment Rate Distribution in West Midlands",
+  "Unemployment\nRate (%)", "Purples", 15
+)
+
+deprivation_map <- create_economic_map(
+  deprivation_map_data, "deprivation_pct",
+  "Household Deprivation Rate Distribution in West Midlands",
+  "Deprivation\nRate (%)", "YlOrRd", 14
+)
+
+student_migration_map <- create_economic_map(
+  student_migration_map_data, "student_migration_pct",
+  "Student Migration Rate Distribution in West Midlands",
+  "Student Migration\nRate (%)", "BuGn", 10
+)
+
+uk_migration_map <- create_economic_map(
+  uk_migration_map_data, "uk_migration_pct",
+  "Within-UK Migration Rate Distribution in West Midlands",
+  "UK Migration\nRate (%)", "GnBu", 11
+)
+
+outside_uk_migration_map <- create_economic_map(
+  outside_uk_migration_map_data, "outside_uk_migration_pct",
+  "Outside-UK Migration Rate Distribution in West Midlands",
+  "Outside-UK Migration\nRate (%)", "PuBu", 12
+)
+
+print(student_migration_map)
+print(uk_migration_map)
+print(outside_uk_migration_map)
+print(pop_density_map)
+print(unemployment_map)
+print(deprivation_map)
+
+```
+
