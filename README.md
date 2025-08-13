@@ -1,4 +1,4 @@
-## GY485 Dissertation – Migration and Crime in Urban Britain: A Spatial Analysis of Immigration Effects in the West Midlands ##
+## GY485 Dissertation – Migration and Crime in the West Midlands: A Spatial Analysis of Domestic, International, and Student Migration Effects ##
 This repository contains the R code and datasets used for the empirical analysis in the GY485 dissertation.
 
 ### Repository Contents ###
