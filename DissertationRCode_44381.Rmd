@@ -1,5 +1,5 @@
 ---
-title: "Dissertation Draft New_1"
+title: "DissertationRCode_44381"
 author: '44831'
 date: "`r Sys.Date()`"
 output: html_document
@@ -21,7 +21,7 @@ library(stringr)
 library(broom)
 
 # Set file paths
-base_path <- "C:/Users/LuChunyi/Desktop/Study/LSE/Dissertation/Data"
+base_path <- "C:/Users/***/Desktop/Study/LSE/Dissertation/Data"
 crime_folder <- "CrimeData_WestMidlands"
 data_path <- paste0(base_path, "/", crime_folder)
 output_path <- base_path
@@ -1031,7 +1031,7 @@ library(kableExtra)
 library(moments)
 
 tmap_mode("plot")
-base_path <- "C:/Users/LuChunyi/Desktop/Study/LSE/Dissertation/Data"
+base_path <- "C:/Users/***/Desktop/Study/LSE/Dissertation/Data"
 
 ```
 
@@ -1405,4 +1405,5 @@ print(unemployment_map)
 print(deprivation_map)
 
 ```
+
 
